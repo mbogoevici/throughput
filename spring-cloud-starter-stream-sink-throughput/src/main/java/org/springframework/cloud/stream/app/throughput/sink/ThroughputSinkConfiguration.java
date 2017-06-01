@@ -26,10 +26,13 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.stream.annotation.EnableBinding;
+import org.springframework.cloud.stream.annotation.StreamListener;
 import org.springframework.cloud.stream.messaging.Sink;
-import org.springframework.context.Lifecycle;
-import org.springframework.integration.annotation.ServiceActivator;
-import org.springframework.messaging.Message;
+import org.springframework.context.SmartLifecycle;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.annotation.EnableKafka;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.messaging.handler.annotation.Payload;
 
 /**
  * A simple handler that will count messages and log witnessed throughput at some interval.
@@ -40,7 +43,9 @@ import org.springframework.messaging.Message;
  */
 @EnableBinding(Sink.class)
 @EnableConfigurationProperties({ThroughputSinkProperties.class})
-public class ThroughputSinkConfiguration implements Lifecycle {
+//@EnableKafka
+@Configuration
+public class ThroughputSinkConfiguration implements SmartLifecycle {
 
 	private final Log logger = LogFactory.getLog(getClass());
 
@@ -80,17 +85,36 @@ public class ThroughputSinkConfiguration implements Lifecycle {
 		return running;
 	}
 
-	@ServiceActivator(inputChannel=Sink.INPUT)
-	public void throughputSink(Message<?> message ) {
+	@Override
+	public boolean isAutoStartup() {
+		return true;
+	}
+
+	@Override
+	public void stop(Runnable callback) {
+		stop();
+	}
+
+	@Override
+	public int getPhase() {
+		return 0;
+	}
+
+	@StreamListener(Sink.INPUT)
+	//@KafkaListener(topics = "perftest3", id = "foo")
+	public void throughputSink(Object payload) {
 		if (start.get() == -1L) {
 			synchronized (start) {
 				if (start.get() == -1L) {
 					// assume a homogeneous message structure - this is intended for
 					// performance tests so we can assume that the messages are similar;
 					// therefore we'll do our reporting based on the first message
-					Object payload = message.getPayload();
-					if (payload instanceof byte[] || payload instanceof String) {
+					//Object payload = message.getPayload();
+					if (payload instanceof byte[]) {
 						reportBytes = true;
+					}
+					else{
+						System.out.println("Payload is a " + payload.getClass().getName());
 					}
 					start.set(System.currentTimeMillis());
 					executorService.execute(new ReportStats());
@@ -99,13 +123,13 @@ public class ThroughputSinkConfiguration implements Lifecycle {
 		}
 		intermediateCounter.incrementAndGet();
 		if (reportBytes) {
-			Object payload = message.getPayload();
+			//Object payload = message.getPayload();
  			if (payload instanceof byte[]) {
 				intermediateBytes.addAndGet(((byte[]) payload).length);
 			}
-			else if (payload instanceof String) {
-				intermediateBytes.addAndGet((((String) payload).getBytes()).length);
-			}
+//			else if (payload instanceof String) {
+//				intermediateBytes.addAndGet((((String) payload).getBytes()).length);
+//			}
 		}
 	}
 
